@@ -1,0 +1,57 @@
+# Build the demo app and publish it to a Nightship Tide channel.
+#
+# Every push to main lands on the machines of everyone who follows the channel.
+# Pull requests never run this: they would not get the secrets anyway, and only
+# commits on main are meant to ship.
+name: publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # windows-latest has no Visual Studio generator; MSVC + Ninja instead.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/nightship-demo.exe build/message.txt dist/
+          # Shown under the text, so it is always clear which build is running.
+          echo "${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" > dist/build.txt
+          ls -la dist
+
+      - name: Publish to Nightship
+        uses: nightship-tools/tide-push@v1
+        with:
+          channel: nightly
+          dir: dist
+          force: "true"
+          sign-key: ${{ secrets.TIDE_SIGN_KEY }}
+          register-url: https://demo-app.nightship.cloud
+          register-token: ${{ secrets.NIGHTSHIP_TOKEN }}
+          s3-endpoint: ${{ secrets.TIDE_S3_ENDPOINT }}
+          s3-region: ${{ secrets.TIDE_S3_REGION }}
+          s3-bucket: ${{ secrets.TIDE_S3_BUCKET }}
+          s3-key: ${{ secrets.TIDE_S3_KEY }}
+          s3-secret: ${{ secrets.TIDE_S3_SECRET }}
